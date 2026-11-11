@@ -1,0 +1,8 @@
+.output/
+.wxt/
+.yarn/
+chrome/
+node_modules/
+dist/
+coverage/
+.DS_Store
