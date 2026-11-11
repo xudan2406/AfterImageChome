@@ -16,6 +16,8 @@ AfterImage is a focused image workspace built for everyday image tasks—without
 - Import one image or a batch of up to 100 images.
 - Convert between JPEG, PNG, and WebP. AVIF output is available only when your browser supports its encoder.
 - Adjust output quality, resize dimensions, preserve aspect ratio, and choose a JPEG background for transparent images.
+- Choose a batch preset for common format/quality settings, then adjust the shared values. Presets do not invent platform-specific dimensions.
+- Crop by dragging over the image or entering pixel bounds; rotate, flip, and undo/redo edits in the local Editor.
 - Compare actual input and output sizes, then download an individual result or export the batch as a ZIP.
 
 **Keep work close**

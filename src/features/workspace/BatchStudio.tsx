@@ -17,6 +17,7 @@ import { extensionForFormat, formatLabel } from '../../engine/format';
 import { detectOutputCapabilitiesInWorker, inspectImageInWorker, processImageInWorker } from '../../engine/worker-client';
 import { SequentialTaskQueue, type QueueTask, type TaskStatus } from '../../tasks/queue';
 import { getBatchImportError, MAX_BATCH_OUTPUT_BYTES } from '../../tasks/batch-limits';
+import { BATCH_PRESETS, getBatchPresetSettings, type BatchPresetSelection } from '../../tasks/batch-presets';
 import { createResultsArchiveInWorker } from '../../tasks/export-zip-client';
 import { saveHistoryRecord, type HistoryRecord } from '../../storage/history';
 import { ImageEngineError, OUTPUT_FORMATS, type DetectedFormat, type ImageProcessingOptions, type ImageProcessingResult, type OutputFormat } from '../../engine/types';
@@ -54,6 +55,7 @@ export function BatchStudio({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [format, setFormat] = useState<OutputFormat>('webp');
   const [quality, setQuality] = useState(0.82);
+  const [selectedPreset, setSelectedPreset] = useState<BatchPresetSelection>('web-optimization');
   const [width, setWidth] = useState('');
   const [height, setHeight] = useState('');
   const [keepAspectRatio, setKeepAspectRatio] = useState(true);
@@ -114,6 +116,10 @@ export function BatchStudio({
   }, []);
 
   async function importFiles(files: FileList | File[]): Promise<boolean> {
+    if (exportControllerRef.current) {
+      setError('Wait for ZIP export to finish before adding images.');
+      return false;
+    }
     if (importBusyRef.current) return false;
     const incoming = Array.from(files);
     if (!incoming.length) return false;
@@ -230,6 +236,21 @@ export function BatchStudio({
     };
   }
 
+  function applyPreset(preset: BatchPresetSelection) {
+    setSelectedPreset(preset);
+    if (preset === 'custom') return;
+    const presetSettings = getBatchPresetSettings(preset, capabilities, format);
+    setFormat(presetSettings.format);
+    setQuality(presetSettings.quality);
+    setWidth(presetSettings.width);
+    setHeight(presetSettings.height);
+    setKeepAspectRatio(presetSettings.keepAspectRatio);
+  }
+
+  function markCustomSettingsChange() {
+    setSelectedPreset('custom');
+  }
+
   async function persistTask(
     task: BatchTask,
     status: TaskStatus,
@@ -265,7 +286,7 @@ export function BatchStudio({
   }
 
   async function processQueue(taskIds?: Set<string>, options?: ImageProcessingOptions) {
-    if (isRunning) return;
+    if (isRunning || isExporting) return;
     const pending = tasksRef.current
       .filter((task) => task.status === 'pending' && (!taskIds || taskIds.has(task.id)))
       .map((task) => ({ id: task.id, input: task.input, status: task.status as 'pending' }));
@@ -407,6 +428,7 @@ export function BatchStudio({
   }
 
   async function exportZip() {
+    if (isExporting || isRunning || isImporting) return;
     const controller = new AbortController();
     exportControllerRef.current = controller;
     setIsExporting(true);
@@ -478,7 +500,7 @@ export function BatchStudio({
             <span className="source-note">Fetching requires your permission for this image host. Credentials and redirects are not followed.</span>
             <Button
               size="small"
-              disabled={isImporting && !remoteBusy}
+              disabled={(isImporting && !remoteBusy) || isExporting}
               onClick={() => {
                 if (remoteBusy) {
                   remoteControllerRef.current?.abort();
@@ -502,10 +524,10 @@ export function BatchStudio({
         <div className="import-icon"><FolderOpen size={19} /></div>
         <strong>{isImporting ? 'Inspecting images locally…' : 'Drop multiple images here'}</strong>
         <span>Up to 100 images · 100 MB each · 500 MB total input and output</span>
-        <Button onClick={() => inputRef.current?.click()} disabled={isImporting}>
+        <Button onClick={() => inputRef.current?.click()} disabled={isImporting || isExporting}>
           <ImagePlus size={14} /> Add Images
         </Button>
-        <input ref={inputRef} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" aria-label="Choose multiple images" onChange={(event) => {
+        <input ref={inputRef} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" aria-label="Choose multiple images" disabled={isImporting || isExporting} onChange={(event) => {
           if (event.currentTarget.files) void importFiles(event.currentTarget.files);
           event.currentTarget.value = '';
         }} />
@@ -518,24 +540,36 @@ export function BatchStudio({
         </div>
         <div className="settings-grid">
           <label className="setting-field">
+            <span>Preset</span>
+            <select value={selectedPreset} onChange={(event) => applyPreset(event.target.value as BatchPresetSelection)}>
+              <option value="custom">Custom</option>
+              {BATCH_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+            </select>
+            <span className="setting-hint">
+              {selectedPreset === 'custom'
+                ? 'Custom settings.'
+                : `${BATCH_PRESETS.find((preset) => preset.id === selectedPreset)?.description} Edit values below; changes switch this to Custom.`}
+            </span>
+          </label>
+          <label className="setting-field">
             <span>Format</span>
-            <select value={format} onChange={(event) => setFormat(event.target.value as OutputFormat)}>
+            <select value={format} onChange={(event) => { setFormat(event.target.value as OutputFormat); markCustomSettingsChange(); }}>
               {outputFormats.map((item) => <option key={item.value} value={item.value} disabled={!capabilities[item.value]}>{item.label}{capabilities[item.value] ? '' : ' — unavailable'}</option>)}
             </select>
           </label>
           <label className="setting-field">
             <span>Quality <strong>{Math.round(quality * 100)}%</strong></span>
-            <input type="range" min="10" max="100" value={Math.round(quality * 100)} disabled={format === 'png'} aria-label="Batch output quality" onChange={(event) => setQuality(Number(event.target.value) / 100)} />
+            <input type="range" min="10" max="100" value={Math.round(quality * 100)} disabled={format === 'png'} aria-label="Batch output quality" onChange={(event) => { setQuality(Number(event.target.value) / 100); markCustomSettingsChange(); }} />
             <span className="setting-hint">{format === 'png' ? 'PNG is lossless.' : 'Applied equally to every image.'}</span>
           </label>
         </div>
         <div className="dimension-controls batch-dimensions">
-          <label className="setting-field"><span>Width (px, optional)</span><input type="number" min="1" max="100000" value={width} onChange={(event) => setWidth(event.target.value)} /></label>
+          <label className="setting-field"><span>Width (px, optional)</span><input type="number" min="1" max="100000" value={width} onChange={(event) => { setWidth(event.target.value); markCustomSettingsChange(); }} /></label>
           <span className="dimension-times">×</span>
-          <label className="setting-field"><span>Height (px, optional)</span><input type="number" min="1" max="100000" value={height} onChange={(event) => setHeight(event.target.value)} /></label>
+          <label className="setting-field"><span>Height (px, optional)</span><input type="number" min="1" max="100000" value={height} onChange={(event) => { setHeight(event.target.value); markCustomSettingsChange(); }} /></label>
         </div>
-        <label className="checkbox-setting"><input type="checkbox" checked={keepAspectRatio} onChange={(event) => setKeepAspectRatio(event.target.checked)} /><span>Maintain aspect ratio</span></label>
-        {format === 'jpeg' && <label className="background-setting"><span>JPEG transparency background</span><span className="color-control"><input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} aria-label="Batch JPEG background color" />{backgroundColor.toUpperCase()}</span></label>}
+        <label className="checkbox-setting"><input type="checkbox" checked={keepAspectRatio} onChange={(event) => { setKeepAspectRatio(event.target.checked); markCustomSettingsChange(); }} /><span>Maintain aspect ratio</span></label>
+        {format === 'jpeg' && <label className="background-setting"><span>JPEG transparency background</span><span className="color-control"><input type="color" value={backgroundColor} onChange={(event) => { setBackgroundColor(event.target.value); markCustomSettingsChange(); }} aria-label="Batch JPEG background color" />{backgroundColor.toUpperCase()}</span></label>}
       </section>
 
       <div className="batch-toolbar">
@@ -548,21 +582,23 @@ export function BatchStudio({
 
       {tasks.length > 0 && (
         <>
-          <div className="batch-stats" aria-label="Batch statistics">
-            <div><span>Total</span><strong>{tasks.length}</strong></div>
+          <div className="batch-stats" aria-label="Batch statistics. Output size and savings include completed tasks only.">
+            <div><span>Total Tasks</span><strong>{tasks.length}</strong></div>
             <div><span>Completed</span><strong>{completedCount}</strong></div>
             <div><span>Failed</span><strong>{failedCount}</strong></div>
+            <div><span>Cancelled</span><strong>{counts.cancelled}</strong></div>
             <div><span>Original Size</span><strong>{formatBytes(originalBytes)}</strong></div>
             <div><span>Output Size</span><strong>{formatBytes(outputBytes)}</strong></div>
             <div><span>Total Saved</span><strong>{formatSignedBytes(netSavedBytes)}</strong></div>
           </div>
+          <p className="batch-stats-note">Output size and savings include completed tasks only.</p>
           <div className="queue-summary" role="status" aria-live="polite">
             {counts.processing > 0
-              ? `${counts.completed} of ${tasks.length} complete · ${counts.processing} processing · ${counts.pending} waiting`
+              ? `${counts.completed} of ${tasks.length} complete · ${counts.processing} processing · ${counts.pending} waiting · ${counts.failed} failed · ${counts.cancelled} cancelled`
               : `${counts.completed} completed · ${counts.pending} waiting · ${counts.failed} failed · ${counts.cancelled} cancelled`}
           </div>
           <div className="batch-actions">
-            <Button variant="primary" disabled={isRunning || isImporting || counts.pending === 0 || !capabilities[format]} onClick={() => void processQueue()}>
+            <Button variant="primary" disabled={isRunning || isExporting || isImporting || counts.pending === 0 || !capabilities[format]} onClick={() => void processQueue()}>
               {isRunning ? <><LoaderCircle size={14} className="spin-icon" /> Processing queue…</> : <><ArrowDownToLine size={14} /> Start Processing ({counts.pending})</>}
             </Button>
             {isRunning && <Button onClick={cancelAll}><X size={13} /> Cancel queue</Button>}
@@ -570,7 +606,7 @@ export function BatchStudio({
             {selectedCompletedCount > 0 && <Button onClick={downloadSelected}><ArrowDownToLine size={13} /> Download Selected ({selectedCompletedCount})</Button>}
             {completedCount > 0 && (isExporting
               ? <Button onClick={cancelExport}><X size={13} /> Cancel ZIP</Button>
-              : <Button onClick={() => void exportZip()}><Archive size={13} /> Export ZIP</Button>)}
+              : <Button disabled={isRunning || isImporting} onClick={() => void exportZip()}><Archive size={13} /> Export ZIP</Button>)}
           </div>
         </>
       )}

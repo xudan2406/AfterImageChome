@@ -10,11 +10,13 @@ AfterImage is a privacy-first image workspace for Chrome. It inspects, converts,
 - Adjust quality, dimensions, aspect ratio, and the background used when converting transparency to JPEG.
 - In Compress mode, choose whether to keep the source format or compress into another supported format.
 - Switch between Convert, Compress, and Resize modes in one Home workspace without dropping the selected image.
-- Crop by source-pixel bounds, rotate in 90° steps, and flip horizontally or vertically in the local Editor.
+- Visually crop or edit source-pixel bounds, rotate in 90° steps, and flip in the local Editor; undo or redo edits.
 - Process images in a short-lived Web Worker; cancel running/queued tasks and retry failures.
+- Apply batch presets for Web Optimization, Social Media, High Quality, or Small File Size, then customize the shared settings.
 - Review real batch totals, target formats, output sizes, and size changes; retry failures and download selected results.
 - Download individual outputs or export a ZIP in a separate Worker.
 - Keep up to 100 recent history entries and 500 MB of output Blobs in IndexedDB, including operation metadata. Delete individual records or clear history.
+- Search history by filename, filter by operation or status, sort by date, and see retained output Blob usage.
 - Use image context-menu actions. Fetching a page image requires a user gesture and optional permission for that exact site origin.
 - Honor the operating-system light/dark color scheme.
 
@@ -28,7 +30,7 @@ The per-image input limit is 100 MB and the decoded/output pixel limit is 100 me
 - Vitest and `@napi-rs/canvas` for real image codec tests
 
 The current UI is English-only. Store and product copy is available in English and Simplified Chinese under `docs/`.
-Editor watermark, brightness/contrast/saturation adjustments, and presets are planned but not implemented. AI image processing, subscriptions, credits, and cloud services are not part of this release.
+Editor watermark, brightness/contrast/saturation adjustments, and editor presets are planned but not implemented. AI image processing, subscriptions, credits, and cloud services are not part of this release.
 
 ## Requirements
 
@@ -65,7 +67,7 @@ npm run build
 npm audit
 ```
 
-See [docs/TESTING.md](./docs/TESTING.md) for what automated tests cover and the remaining manual Chrome checks. Release copy and operational requirements are in [docs/RELEASE_CHECKLIST.md](./docs/RELEASE_CHECKLIST.md).
+See [docs/CURRENT_STATUS.md](./docs/CURRENT_STATUS.md) for the v0.2 implementation baseline, [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for system design, [docs/TESTING.md](./docs/TESTING.md) for test results and remaining coverage, and [docs/RELEASE_CHECKLIST.md](./docs/RELEASE_CHECKLIST.md) for release gates.
 
 ## Privacy and permissions
 

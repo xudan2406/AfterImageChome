@@ -1,4 +1,4 @@
-# Product Requirements
+# Product Requirements — v0.2
 
 ## Target users
 
@@ -17,7 +17,7 @@ Common image tasks are scattered across websites, desktop utilities, and browser
 
 ## Functional requirements
 
-### Foundation implemented
+### Product foundation
 
 - Chrome Manifest V3 extension built with WXT.
 - React Popup and Side Panel.
@@ -26,13 +26,9 @@ Common image tasks are scattered across websites, desktop utilities, and browser
 - Local image picker, drag-and-drop, and preview.
 - Functional workspace navigation and privacy-oriented empty states.
 
-### MVP remaining
+### Core product scope
 
-- Local conversion, compression, resize, and format capability detection.
-- Queue, bounded batch processing, retries, cancellation, and ZIP export.
-- IndexedDB task history, retention, and clear-history controls.
-- Context-menu remote image acquisition with robust CORS and size handling, using origin-specific optional permission only when implemented.
-- English and Simplified Chinese localization, accessibility review, and automated coverage.
+Provide single-image processing, bounded batch workflows, saved output history, basic local editing, and user-invoked browser image actions. The exact implemented scope and deferred features are maintained in [CURRENT_STATUS.md](./CURRENT_STATUS.md).
 
 ## Non-functional requirements
 
@@ -43,6 +39,6 @@ Common image tasks are scattered across websites, desktop utilities, and browser
 
 ## Roadmap
 
-1. MVP image engine and browser integration.
-2. Crop, transforms, adjustments, watermarking, presets, undo/redo.
-3. Local AI interfaces and optional inference; no cloud AI in the MVP.
+1. Complete remaining v0.2 workspace preferences and release acceptance without replacing the existing engine, queue, or IndexedDB.
+2. Follow with separately tested Editor tools and accessibility improvements.
+3. Keep AI, accounts, subscriptions, credits, and cloud processing out of the current release scope.

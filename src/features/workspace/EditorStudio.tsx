@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { ArrowDownToLine, FlipHorizontal2, FlipVertical2, FolderOpen, RotateCcw, RotateCw, Sparkles } from 'lucide-react';
+import { useEffect, useReducer, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { ArrowDownToLine, FlipHorizontal2, FlipVertical2, FolderOpen, Redo2, RotateCcw, RotateCw, Sparkles, Undo2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { extensionForFormat, formatLabel } from '../../engine/format';
 import { detectOutputCapabilitiesInWorker, inspectImageInWorker, processImageInWorker } from '../../engine/worker-client';
 import { ImageEngineError, OUTPUT_FORMATS, type DetectedFormat, type ImageProcessingOptions, type ImageProcessingResult, type ImageTransformOptions, type OutputFormat } from '../../engine/types';
 import { saveHistoryRecord } from '../../storage/history';
+import {
+  createEditorHistory,
+  cropFromDrag,
+  editorHistoryReducer,
+  type EditorEdits,
+} from './editor-state';
 
 type EditorAsset = {
   file: File;
@@ -14,7 +20,7 @@ type EditorAsset = {
   height: number;
 };
 
-type CropState = { x: string; y: string; width: string; height: string };
+type CropDrag = { pointerId: number; x: number; y: number };
 
 const formatOptions: { value: OutputFormat; label: string }[] = [
   { value: 'jpeg', label: 'JPEG' },
@@ -25,10 +31,18 @@ const formatOptions: { value: OutputFormat; label: string }[] = [
 
 export function EditorStudio() {
   const [asset, setAsset] = useState<EditorAsset | null>(null);
-  const [crop, setCrop] = useState<CropState>({ x: '0', y: '0', width: '', height: '' });
-  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
-  const [flipHorizontal, setFlipHorizontal] = useState(false);
-  const [flipVertical, setFlipVertical] = useState(false);
+  const [editHistory, dispatchEdit] = useReducer(
+    editorHistoryReducer,
+    {
+      crop: { x: '0', y: '0', width: '', height: '' },
+      rotation: 0,
+      flipHorizontal: false,
+      flipVertical: false,
+    } satisfies EditorEdits,
+    createEditorHistory,
+  );
+  const edits = editHistory.present;
+  const [cropDraft, setCropDraft] = useState<EditorEdits['crop'] | null>(null);
   const [format, setFormat] = useState<OutputFormat>('png');
   const [capabilities, setCapabilities] = useState<Record<OutputFormat, boolean>>({ jpeg: false, png: false, webp: false, avif: false });
   const [result, setResult] = useState<ImageProcessingResult | null>(null);
@@ -38,6 +52,8 @@ export function EditorStudio() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const cropOverlayRef = useRef<SVGSVGElement>(null);
+  const cropDragRef = useRef<CropDrag | null>(null);
   const assetUrlRef = useRef<string | null>(null);
   const resultUrlRef = useRef<string | null>(null);
   const operationControllerRef = useRef<AbortController | null>(null);
@@ -95,10 +111,17 @@ export function EditorStudio() {
       if (assetUrlRef.current) URL.revokeObjectURL(assetUrlRef.current);
       assetUrlRef.current = url;
       setAsset({ file, url, format: inspection.format, width: inspection.width, height: inspection.height });
-      setCrop({ x: '0', y: '0', width: String(inspection.width), height: String(inspection.height) });
-      setRotation(0);
-      setFlipHorizontal(false);
-      setFlipVertical(false);
+      dispatchEdit({
+        type: 'replace',
+        edits: {
+          crop: { x: '0', y: '0', width: String(inspection.width), height: String(inspection.height) },
+          rotation: 0,
+          flipHorizontal: false,
+          flipVertical: false,
+        },
+      });
+      cropDragRef.current = null;
+      setCropDraft(null);
     } catch (cause) {
       if (sequence !== sequenceRef.current || (cause instanceof Error && cause.name === 'AbortError')) return;
       const description = cause instanceof Error ? cause.message : 'The selected image could not be opened.';
@@ -115,28 +138,101 @@ export function EditorStudio() {
     void importFile(event.dataTransfer.files[0]);
   }
 
-  function updateCrop(key: keyof CropState, value: string) {
-    setCrop((current) => ({ ...current, [key]: value }));
+  function updateCrop(key: keyof EditorEdits['crop'], value: string) {
+    dispatchEdit({ type: 'set-crop-field', key, value });
     clearResult();
   }
 
   function rotate(degrees: 90 | -90) {
-    setRotation((current) => ((current + degrees + 360) % 360) as 0 | 90 | 180 | 270);
+    dispatchEdit({ type: 'rotate', degrees });
     clearResult();
   }
 
   function transformOptions(): ImageTransformOptions {
     return {
       crop: {
-        x: Number(crop.x),
-        y: Number(crop.y),
-        width: Number(crop.width),
-        height: Number(crop.height),
+        x: Number(edits.crop.x),
+        y: Number(edits.crop.y),
+        width: Number(edits.crop.width),
+        height: Number(edits.crop.height),
       },
-      rotation,
-      flipHorizontal,
-      flipVertical,
+      rotation: edits.rotation,
+      flipHorizontal: edits.flipHorizontal,
+      flipVertical: edits.flipVertical,
     };
+  }
+
+  function sourcePoint(event: ReactPointerEvent<SVGSVGElement>): { x: number; y: number } | null {
+    if (!asset) return null;
+    const matrix = event.currentTarget.getScreenCTM();
+    if (!matrix) return null;
+    const point = event.currentTarget.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const source = point.matrixTransform(matrix.inverse());
+    return { x: source.x, y: source.y };
+  }
+
+  function draftForPoint(point: { x: number; y: number }, drag: CropDrag) {
+    if (!asset) return null;
+    return cropFromDrag(
+      { x: drag.x, y: drag.y },
+      point,
+      asset.width,
+      asset.height,
+    );
+  }
+
+  function handleCropPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (!asset || isProcessing) return;
+    const point = sourcePoint(event);
+    if (!point || point.x < 0 || point.y < 0 || point.x > asset.width || point.y > asset.height) return;
+    const drag: CropDrag = {
+      pointerId: event.pointerId,
+      x: Math.min(Math.floor(point.x), asset.width - 1),
+      y: Math.min(Math.floor(point.y), asset.height - 1),
+    };
+    cropDragRef.current = drag;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setCropDraft(draftForPoint(point, drag));
+    clearResult();
+    event.preventDefault();
+  }
+
+  function handleCropPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = cropDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = sourcePoint(event);
+    if (point) setCropDraft(draftForPoint(point, drag));
+  }
+
+  function handleCropPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = cropDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = sourcePoint(event);
+    const crop = point ? draftForPoint(point, drag) : cropDraft;
+    if (crop) dispatchEdit({ type: 'set-crop', crop });
+    cropDragRef.current = null;
+    setCropDraft(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleCropPointerCancel(event: ReactPointerEvent<SVGSVGElement>) {
+    if (cropDragRef.current?.pointerId !== event.pointerId) return;
+    cropDragRef.current = null;
+    setCropDraft(null);
+  }
+
+  function undoEdit() {
+    dispatchEdit({ type: 'undo' });
+    clearResult();
+  }
+
+  function redoEdit() {
+    dispatchEdit({ type: 'redo' });
+    clearResult();
   }
 
   async function processEditedImage() {
@@ -197,14 +293,24 @@ export function EditorStudio() {
 
   function resetEdits() {
     if (!asset) return;
-    setCrop({ x: '0', y: '0', width: String(asset.width), height: String(asset.height) });
-    setRotation(0);
-    setFlipHorizontal(false);
-    setFlipVertical(false);
+    dispatchEdit({
+      type: 'set-edits',
+      edits: {
+        crop: { x: '0', y: '0', width: String(asset.width), height: String(asset.height) },
+        rotation: 0,
+        flipHorizontal: false,
+        flipVertical: false,
+      },
+    });
+    cropDragRef.current = null;
+    setCropDraft(null);
     clearResult();
     setError('');
     setNotice('');
   }
+
+  const activeCrop = cropDraft ?? edits.crop;
+  const cropBounds = asset ? getVisibleCropBounds(activeCrop, asset.width, asset.height) : null;
 
   return (
     <>
@@ -219,7 +325,41 @@ export function EditorStudio() {
       <div className={`import-card editor-import ${asset ? 'has-image' : ''}`} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
         {asset ? (
           <>
-            <img className="image-preview" src={asset.url} alt={`Editor source ${asset.file.name}`} />
+            <div className="editor-crop-stage">
+              <img src={asset.url} alt={`Editor source ${asset.file.name}`} draggable={false} />
+              {cropBounds && (
+                <svg
+                  ref={cropOverlayRef}
+                  className="editor-crop-overlay"
+                  viewBox={`0 0 ${asset.width} ${asset.height}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  aria-label="Drag on the image to set the crop area"
+                  onPointerDown={handleCropPointerDown}
+                  onPointerMove={handleCropPointerMove}
+                  onPointerUp={handleCropPointerUp}
+                  onPointerCancel={handleCropPointerCancel}
+                >
+                  <path
+                    d={`M0 0 H${asset.width} V${asset.height} H0 Z M${cropBounds.x} ${cropBounds.y} H${cropBounds.x + cropBounds.width} V${cropBounds.y + cropBounds.height} H${cropBounds.x} Z`}
+                    fill="rgba(15, 16, 24, 0.42)"
+                    role="img"
+                    fillRule="evenodd"
+                    pointerEvents="none"
+                  />
+                  <rect
+                    x={cropBounds.x}
+                    y={cropBounds.y}
+                    width={cropBounds.width}
+                    height={cropBounds.height}
+                    fill="transparent"
+                    stroke="#8d87ee"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                </svg>
+              )}
+            </div>
             <div className="preview-meta"><strong>{asset.file.name}</strong><span>{formatBytes(asset.file.size)} · {asset.width} × {asset.height} · {formatLabel(asset.format)}</span></div>
             <Button size="small" onClick={() => inputRef.current?.click()}><FolderOpen size={13} /> Replace Image</Button>
           </>
@@ -240,7 +380,14 @@ export function EditorStudio() {
 
       {asset && (
         <section className="processing-panel editor-controls">
-          <div className="processing-heading"><div><p className="eyebrow">BASIC EDITS</p><h2>Transform</h2></div><Button size="small" onClick={resetEdits}><RotateCcw size={12} /> Reset</Button></div>
+          <div className="processing-heading editor-history-heading">
+            <div><p className="eyebrow">BASIC EDITS</p><h2>Transform</h2></div>
+            <div className="editor-history-actions">
+              <Button size="small" disabled={!editHistory.past.length} aria-label="Undo edit" onClick={undoEdit}><Undo2 size={12} /> Undo</Button>
+              <Button size="small" disabled={!editHistory.future.length} aria-label="Redo edit" onClick={redoEdit}><Redo2 size={12} /> Redo</Button>
+              <Button size="small" onClick={resetEdits}><RotateCcw size={12} /> Reset</Button>
+            </div>
+          </div>
           <div className="editor-tool-row">
             <div className="editor-tool-group">
               <span className="setting-hint">Rotate</span>
@@ -249,16 +396,17 @@ export function EditorStudio() {
             </div>
             <div className="editor-tool-group">
               <span className="setting-hint">Flip</span>
-              <Button size="small" aria-pressed={flipHorizontal} onClick={() => { setFlipHorizontal((value) => !value); clearResult(); }}><FlipHorizontal2 size={13} /> Horizontal</Button>
-              <Button size="small" aria-pressed={flipVertical} onClick={() => { setFlipVertical((value) => !value); clearResult(); }}><FlipVertical2 size={13} /> Vertical</Button>
+              <Button size="small" aria-pressed={edits.flipHorizontal} onClick={() => { dispatchEdit({ type: 'toggle-flip-horizontal' }); clearResult(); }}><FlipHorizontal2 size={13} /> Horizontal</Button>
+              <Button size="small" aria-pressed={edits.flipVertical} onClick={() => { dispatchEdit({ type: 'toggle-flip-vertical' }); clearResult(); }}><FlipVertical2 size={13} /> Vertical</Button>
             </div>
           </div>
           <div className="editor-crop-heading"><strong>Crop area</strong><span>{asset.width} × {asset.height} source pixels</span></div>
+          <p className="editor-crop-hint">Drag on the image to set the crop area, or enter source-pixel bounds.</p>
           <div className="editor-crop-grid">
-            <label className="setting-field"><span>Left (X)</span><input type="number" min="0" max={asset.width - 1} value={crop.x} onChange={(event) => updateCrop('x', event.target.value)} /></label>
-            <label className="setting-field"><span>Top (Y)</span><input type="number" min="0" max={asset.height - 1} value={crop.y} onChange={(event) => updateCrop('y', event.target.value)} /></label>
-            <label className="setting-field"><span>Width</span><input type="number" min="1" max={asset.width} value={crop.width} onChange={(event) => updateCrop('width', event.target.value)} /></label>
-            <label className="setting-field"><span>Height</span><input type="number" min="1" max={asset.height} value={crop.height} onChange={(event) => updateCrop('height', event.target.value)} /></label>
+            <label className="setting-field"><span>Left (X)</span><input type="number" min="0" max={asset.width - 1} value={activeCrop.x} onChange={(event) => updateCrop('x', event.target.value)} /></label>
+            <label className="setting-field"><span>Top (Y)</span><input type="number" min="0" max={asset.height - 1} value={activeCrop.y} onChange={(event) => updateCrop('y', event.target.value)} /></label>
+            <label className="setting-field"><span>Width</span><input type="number" min="1" max={asset.width} value={activeCrop.width} onChange={(event) => updateCrop('width', event.target.value)} /></label>
+            <label className="setting-field"><span>Height</span><input type="number" min="1" max={asset.height} value={activeCrop.height} onChange={(event) => updateCrop('height', event.target.value)} /></label>
           </div>
           <div className="editor-output-row">
             <label className="setting-field"><span>Output format</span><select value={format} onChange={(event) => { setFormat(event.target.value as OutputFormat); clearResult(); }}>
@@ -302,4 +450,26 @@ function formatBytes(bytes: number): string {
 
 function removeExtension(filename: string): string {
   return filename.replace(/\.[^.]+$/, '') || 'image';
+}
+
+function getVisibleCropBounds(
+  crop: EditorEdits['crop'],
+  imageWidth: number,
+  imageHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  const parsedX = Number(crop.x);
+  const parsedY = Number(crop.y);
+  const x = clamp(Number.isFinite(parsedX) ? Math.trunc(parsedX) : 0, 0, imageWidth - 1);
+  const y = clamp(Number.isFinite(parsedY) ? Math.trunc(parsedY) : 0, 0, imageHeight - 1);
+  const remainingWidth = imageWidth - x;
+  const remainingHeight = imageHeight - y;
+  const parsedWidth = Number(crop.width);
+  const parsedHeight = Number(crop.height);
+  const width = clamp(Number.isFinite(parsedWidth) ? Math.trunc(parsedWidth) : 1, 1, remainingWidth);
+  const height = clamp(Number.isFinite(parsedHeight) ? Math.trunc(parsedHeight) : 1, 1, remainingHeight);
+  return { x, y, width, height };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

@@ -3,8 +3,8 @@ import type { ImageProcessingOptions, ImageProcessingResult } from '../engine/ty
 const DATABASE_NAME = 'afterimage-local';
 const DATABASE_VERSION = 1;
 const STORE_NAME = 'processing-history';
-const MAX_HISTORY_ITEMS = 100;
-const MAX_HISTORY_OUTPUT_BYTES = 500 * 1024 * 1024;
+export const MAX_HISTORY_ITEMS = 100;
+export const MAX_HISTORY_OUTPUT_BYTES = 500 * 1024 * 1024;
 
 export type HistoryRecord = {
   id: string;
@@ -25,6 +25,7 @@ export type HistoryRecord = {
 
 export type HistorySummary = Omit<HistoryRecord, 'outputBlob'> & {
   hasOutput: boolean;
+  storedOutputBytes: number;
 };
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -119,7 +120,11 @@ export async function listHistorySummaries(): Promise<HistorySummary[]> {
           return;
         }
         const { outputBlob, ...record } = cursor.value as HistoryRecord;
-        summaries.push({ ...record, hasOutput: Boolean(outputBlob) });
+        summaries.push({
+          ...record,
+          hasOutput: Boolean(outputBlob),
+          storedOutputBytes: outputBlob?.size ?? 0,
+        });
         cursor.continue();
       };
       request.onerror = () => reject(request.error ?? new Error('Could not read processing history.'));

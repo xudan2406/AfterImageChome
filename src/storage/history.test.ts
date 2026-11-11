@@ -38,7 +38,12 @@ describe('processing history', () => {
 
     const summaries = await listHistorySummaries();
     expect(summaries.map(({ id }) => id)).toEqual(['newer', 'older']);
-    expect(summaries[0]).toMatchObject({ id: 'newer', hasOutput: true, operation: 'convert' });
+    expect(summaries[0]).toMatchObject({
+      id: 'newer',
+      hasOutput: true,
+      operation: 'convert',
+      storedOutputBytes: 5,
+    });
     expect(summaries[0]).not.toHaveProperty('outputBlob');
     const newest = await getHistoryRecord('newer');
     await expect(newest?.outputBlob?.text()).resolves.toBe('newer');

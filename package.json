@@ -10,7 +10,7 @@
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:unit": "vitest run src/engine/resize.test.ts src/engine/worker-client.test.ts src/browser/remote-image.test.ts src/content/image-discovery.test.ts src/features/workspace/home-mode.test.ts src/storage/history.test.ts src/tasks/queue.test.ts",
+    "test:unit": "vitest run src/engine/resize.test.ts src/engine/worker-client.test.ts src/browser/remote-image.test.ts src/content/image-discovery.test.ts src/features/workspace/home-mode.test.ts src/features/workspace/history-filters.test.ts src/features/workspace/editor-state.test.ts src/storage/history.test.ts src/tasks/queue.test.ts src/tasks/batch-presets.test.ts",
     "test:integration": "vitest run src/engine/process-image.test.ts src/tasks/export-zip.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",

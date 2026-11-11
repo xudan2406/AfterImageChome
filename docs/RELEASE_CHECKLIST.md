@@ -11,32 +11,33 @@ This checklist is a preparation aid only. **It does not publish to the Chrome We
 - [x] Confirm English-only runtime UI is acceptable; Simplified Chinese UI localization is not required for this release.
 - [ ] Test the declared Chrome 116 minimum version.
 - [x] Review current Chrome Web Store requirements for permission justifications, remote-code declaration, data-use certification, and a public privacy-policy link. The local policy now includes the Limited Use statement; complete declarations in the Developer Dashboard after publisher identity and URL are supplied.
-- [x] Verify the actual optional host permission prompt and successful user-authorized remote conversion in Chrome.
+- [ ] Re-verify the optional host permission prompt and successful user-authorized remote conversion on the release build.
 - [ ] Verify permission revocation and permission-denial error handling in Chrome.
 
 ## Engineering
 
-- [ ] `npm ci`
-- [x] `npm run typecheck` (latest QA report: pass)
-- [x] `npm run lint` (latest QA report: pass)
-- [x] `npm run test:unit` (latest QA report: 38 tests passed)
-- [x] `npm run test:integration` (latest QA report: 32 tests passed, including actual crop/rotate/flip pixels)
-- [x] `npm test` (latest QA report: 70 tests passed)
-- [x] `npm run build` (latest QA report: pass)
-- [x] Review `npm audit` for both runtime and development dependencies; latest full and production-only audits report no known vulnerabilities.
-- [x] Inspect `.output/chrome-mv3/manifest.json` and generated package: MV3, minimum Chrome 116, self-only script CSP, documented permissions, both Workers and the provided 16/32/48/128 PNG extension icons included, no development-only package files. `.output/afterimage-0.1.0-chrome.zip` generated locally (14 files; 162.88 kB).
+- [x] `npm run typecheck` passes for the latest Editor phase.
+- [x] `npm run lint` passes for the latest Editor phase.
+- [x] `npm run test:unit` passes for the latest Editor phase.
+- [x] `npm run test:integration` passes for the latest Editor phase.
+- [x] `npm test` passes for the latest Editor phase.
+- [x] `npm run build` passes for the latest Editor phase.
+- [ ] Run `npm ci` and `npm audit` against the exact release dependency tree.
+- [ ] Inspect the production manifest and regenerate/inspect a distributable ZIP for the exact release source tree.
 - [x] Confirm there is no telemetry, analytics, remote code, or automatic publishing step (code and package review).
 
 ## Manual Chrome acceptance (required)
 
-- [x] Load the unpacked production build in Chrome 157 and verify Popup, Side Panel navigation, a single-image conversion/download, and history after reopening.
+- [ ] Load the current unpacked production build in Chrome and verify Popup, Side Panel navigation, a single-image conversion/download, and history after reopening.
 - [ ] Verify Side Panel sizing, keyboard focus, and light/dark system themes.
-- [ ] Process valid images near the 100 MB and 100-megapixel limits. Rejecting a malformed file and a file over 100 MB is verified.
-- [x] Import and process 100 small test images; all 100 completed and a downloaded ZIP contained exactly 100 WebP files.
-- [ ] Verify serial task states during the run, cancellation, retry, individual downloads, and memory release after removing/replacing/cancelling tasks. Closing the Side Panel removed its AfterImage process from Chrome Task Manager.
+- [ ] Process valid images near the 100 MB and 100-megapixel limits; verify malformed and over-limit image errors.
+- [ ] Import and process 100 small test images, verify task states, and inspect the ZIP contents.
+- [ ] Verify cancellation, retry, individual downloads, and memory release after removing/replacing/cancelling tasks.
 - [ ] Verify object URLs/workers are released after removing tasks, replacing images, cancelling jobs, closing the Side Panel, and cancelling ZIP export.
 - [ ] Open saved history after a Side Panel reload; verify output downloads, 100-record/500-MB retention, and deletion/clear behavior.
-- [x] Export ZIPs containing real images; open two-image and 100-image archives and verify their WebP entries.
+- [ ] Verify History filename search, operation/status filters, date sorting, retained output size, and clear-history confirmation in Chrome.
+- [ ] In Editor, drag a crop selection, verify numeric bounds update, exercise undo/redo/reset, and confirm the downloaded output matches the visible transform.
+- [ ] Export ZIPs containing real images and verify the archive entries.
 - [ ] Verify ZIP cancellation and the 500 MB refusal path.
 - [ ] Test right-click open, PNG, WebP, compression, and batch actions on same-origin and cross-origin images.
 - [ ] Test permission denial, revoked permission, CORS denial, HTTP errors, redirects, invalid MIME, misleading extension, and over-limit response.
@@ -52,4 +53,4 @@ This checklist is a preparation aid only. **It does not publish to the Chrome We
 
 ## Current QA status
 
-Automated checks pass after the P0.5 refinement: TypeScript, lint, 70 tests, production build, and dependency audits. Engine integration tests verify real crop, rotation, and horizontal/vertical flip pixel output; unit tests verify Convert/Compress do not inherit hidden resize options. Existing Chrome 157 manual observations predate this UI refinement; Home mode routing, batch statistics and selection actions, history metadata, and Editor controls still need installed-extension acceptance. Chrome 116 is unavailable in the current environment. The full acceptance matrix remains incomplete, including valid near-limit images, cancellation/retry and per-file batch downloads, history retention/deletion, ZIP cancellation/size refusal, permission revocation/failure, and narrow/dark layouts. Publisher identity/contact and the public privacy-policy page are ready; Developer Dashboard disclosures and remaining manual checks still block store submission. See [TESTING.md](./TESTING.md) for the recorded results.
+The latest automated checks pass, but the latest Batch, History, and Editor UI refinements have not been manually verified in Chrome. Historical Chrome 157 observations do not satisfy current release acceptance. Dependency audit, final ZIP inspection, minimum-version testing, and the remaining manual acceptance are open. Publisher identity/contact and the public privacy-policy page are ready; Developer Dashboard disclosures and remaining checks still block store submission. See [TESTING.md](./TESTING.md) for the authoritative test results and outstanding coverage.
